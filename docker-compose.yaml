@@ -1,0 +1,28 @@
+services:
+  mariadb:
+    image: mariadb:lts-ubi
+    volumes:
+      - m321_project_mariadb:/var/lib/mysql
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=supersecret123
+      - MYSQL_DATABASE=mychat
+      - MYSQL_USER=mychat
+      - MYSQL_PASSWORD=mychatpassword
+    ports:
+      - 3306:3306
+
+  phpmyadmin:
+    image: phpmyadmin
+    depends_on:
+      - mariadb
+    restart: always
+    environment:
+      - PMA_HOST=mariadb
+      - PMA_PORT=3306
+      - MYSQL_ROOT_PASSWORD=supersecret123
+    ports:
+      - 9200:80
+
+volumes:
+  m321_project_mariadb:
