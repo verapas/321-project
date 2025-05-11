@@ -1,24 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Chat Program</title>
+  <title>Chat Application</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script>
+    // Check if user is logged in
+    const user = localStorage.getItem("user");
+    if (!user) {
+      // No user data, redirect to login
+      window.location.href = "/login.html";
+    } else {
+      try {
+        const userData = JSON.parse(user);
+        if (!userData.token) {
+          // Invalid token, redirect to login
+          window.location.href = "/login.html";
+        }
+      } catch (e) {
+        // Invalid stored data, redirect to login
+        localStorage.removeItem("user");
+        window.location.href = "/login.html";
+      }
+    }
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/style.css" />
-  <script src="/script.js"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="/scripts/index.js"></script>
 </head>
-
-<body class="flex items-center justify-center w-screen h-screen">
-  <div class="flex flex-col items-center gap-2">
-    <h1 class="font-semibold">Hello 321</h1>
-    <button id="btnSendHello" class="p-2 px-4 bg-red-300 rounded hover:bg-red-500">
-      Send Hello To Server!
+<body class="flex flex-col w-screen h-screen gap-3 text-white bg-slate-800 items-center">
+<header class="flex items-center justify-between flex-shrink-0 pt-3 h-14 w-full max-w-4xl">
+  <h1 class="text-2xl font-bold">💬 Chat Application</h1>
+  <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
+      <span id="username-display" class="text-blue-300"></span>
+      <button id="edit-username" class="text-xs text-gray-400 hover:text-white">
+        Edit
+      </button>
+    </div>
+    <button id="logout" class="px-4 py-2 bg-red-500 hover:bg-red-400 rounded">
+      Logout
     </button>
-    <div id="messages" class="flex flex-col gap-2"></div>
   </div>
-</body>
+</header>
+<main class="flex grow max-w-4xl w-full gap-4 overflow-hidden">
+  <!-- Chat messages area -->
+  <div class="flex flex-col grow bg-slate-700 rounded-lg overflow-hidden">
+    <div id="messages-container" class="flex flex-col grow p-4 overflow-y-auto gap-3">
+      <!-- Messages will be inserted here -->
+    </div>
+    <div class="p-4 bg-slate-600 flex gap-2 items-center">
+      <input
+              id="message-input"
+              placeholder="Type your message..."
+              type="text"
+              class="w-full p-2 px-4 bg-slate-500 rounded grow placeholder-gray-300 text-white"
+      />
+      <button
+              id="send-message"
+              class="px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded"
+      >
+        Send
+      </button>
+    </div>
+    <div id="typing-indicator" class="px-4 py-1 text-sm text-gray-400 italic hidden">
+      Someone is typing...
+    </div>
+  </div>
 
+  <!-- Active users sidebar -->
+  <div class="w-64 bg-slate-700 rounded-lg flex flex-col">
+    <div class="p-3 bg-slate-600 font-semibold">
+      Active Users
+    </div>
+    <div id="active-users" class="p-3 flex flex-col gap-2 overflow-y-auto grow">
+      <!-- Active users will be inserted here -->
+    </div>
+  </div>
+</main>
+<footer class="flex items-center justify-center flex-shrink-0 h-14">
+  <p>Chat Application - Distributed Systems Project</p>
+</footer>
+
+<!-- Username edit modal -->
+<div id="username-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+  <div class="bg-slate-700 p-6 rounded-lg w-96 flex flex-col gap-4">
+    <h3 class="text-xl font-semibold">Change Username</h3>
+    <input
+            id="new-username"
+            placeholder="New username"
+            type="text"
+            class="w-full p-2 px-4 bg-slate-600 rounded placeholder-gray-300 text-white"
+    />
+    <div class="flex justify-end gap-2">
+      <button id="cancel-username" class="px-4 py-2 bg-gray-500 hover:bg-gray-400 rounded">
+        Cancel
+      </button>
+      <button id="save-username" class="px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded">
+        Save
+      </button>
+    </div>
+    <span id="username-error" class="text-red-500"></span>
+  </div>
+</div>
+</body>
 </html>

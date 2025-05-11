@@ -27,10 +27,19 @@ if (env !== 'production') {
 
 // deliver static files from the client folder like css, js, images
 app.use(express.static('client'))
-// route for the homepage
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/client/index.html')
-})
+
+// redirect to login when accessing webpage
+app.get("/", (req, res) => {
+  res.redirect("/login.html");
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(__dirname + "/client/login.html");
+});
+
+app.get("/register", (req, res) => {
+  res.sendFile(__dirname + "/client/register.html");
+});
 // Initialize the websocket server
 initializeWebsocketServer(server)
 // Initialize the REST api

@@ -1,7 +1,7 @@
 const { executeSQL } = require('./database')
 require('dotenv').config();
 const { body, validationResult } = require("express-validator");
-const { initializeDatabase, queryDB, insertDB } = require("./database");
+const { initializeMariaDB, queryDB, insertDB } = require("./database");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const secretKey = process.env.SECRET_KEY || 'fallback-secret-key';
@@ -307,7 +307,7 @@ const updateUserActivity = async (userId) => {
 
 const initializeAPI = async (app, server) => {
   // Initialize database
-  db = await initializeDatabase();
+  db = await initializeMariaDB();
 
   // Initialize Socket.io
   io = require('socket.io')(server, {
