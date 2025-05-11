@@ -14,17 +14,30 @@ let pool = null
  * @returns {void}
  * @see {@link https://mariadb.com/kb/en/mariadb-connector-nodejs-pooling/}
  */
-const initializeMariaDB = () => {
+const initializeMariaDB = async () => {
   console.log('Initializing MariaDB')
   const mariadb = require('mariadb')
-  pool = mariadb.createPool({
-    database: process.env.DB_NAME || 'mychat',
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'mychat',
-    password: process.env.DB_PASSWORD || 'mychatpassword',
-    connectionLimit: 5,
-  })
-  console.log('MariaDB initialized')
+  
+  try {
+    pool = mariadb.createPool({
+      database: process.env.DB_NAME || 'mychat',
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'mychat',
+      password: process.env.DB_PASSWORD || 'mychatpassword',
+      connectionLimit: 5,
+    });
+    
+    // Test the connection
+    const conn = await pool.getConnection();
+    console.log('Successfully connected to MariaDB');
+    conn.release();
+    
+    console.log('MariaDB initialized successfully');
+    return pool;
+  } catch (error) {
+    console.error('Error initializing MariaDB:', error);
+    throw error;
+  }
 }
 
 /**
@@ -40,13 +53,18 @@ const initializeMariaDB = () => {
 const executeSQL = async (query, params) => {
   let conn
   try {
-    conn = await pool.getConnection()
-    const res = await conn.query(query, params)
-    return res
+    if (!pool) {
+      throw new Error('Database pool is not initialized');
+    }
+    
+    conn = await pool.getConnection();
+    const res = await conn.query(query, params);
+    return res;
   } catch (err) {
-    console.log(err)
+    console.error(`SQL execution error: ${err.message}`);
+    throw err;
   } finally {
-    if (conn) conn.release()
+    if (conn) conn.release();
   }
 }
 
@@ -57,21 +75,87 @@ const executeSQL = async (query, params) => {
  */
 const initializeDBSchema = async () => {
   console.log('Initializing database schema')
+  
+  // Create users table with username and password fields
   const userTableQuery = `CREATE TABLE IF NOT EXISTS users (
     id INT NOT NULL AUTO_INCREMENT,
-    name VARCHAR(255) NOT NULL,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
     PRIMARY KEY (id)
   );`
   await executeSQL(userTableQuery)
+  
+  // Create messages table
   const messageTableQuery = `CREATE TABLE IF NOT EXISTS messages (
     id INT NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    message VARCHAR(255) NOT NULL,
+    sender_id INT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp DATETIME NOT NULL,
     PRIMARY KEY (id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (sender_id) REFERENCES users(id)
   );`
   await executeSQL(messageTableQuery)
+  
+  // Create active_users table
+  const activeUsersTableQuery = `CREATE TABLE IF NOT EXISTS active_users (
+    id INT NOT NULL AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    last_active DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );`
+  await executeSQL(activeUsersTableQuery)
+  
   console.log('Database schema initialized')
 }
 
-module.exports = { executeSQL, initializeMariaDB, initializeDBSchema }
+/**
+ * Execute a query on the database
+ * @param {Object} db - Database connection pool
+ * @param {string} query - SQL query to execute
+ * @param {Array} params - Parameters for the query
+ * @returns {Promise<Array>} - Query results
+ */
+const queryDB = async (db, query, params = []) => {
+  let conn;
+  try {
+    conn = await db.getConnection();
+    const results = await conn.query(query, params);
+    return results;
+  } catch (error) {
+    console.error(`Database query error: ${error.message}`);
+    throw error;
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+/**
+ * Insert data into the database
+ * @param {Object} db - Database connection pool
+ * @param {string} query - SQL query to execute
+ * @param {Array} params - Parameters for the query
+ * @returns {Promise<Object>} - Insert result with insertId
+ */
+const insertDB = async (db, query, params = []) => {
+  let conn;
+  try {
+    conn = await db.getConnection();
+    const result = await conn.query(query, params);
+    return result;
+  } catch (error) {
+    console.error(`Database insert error: ${error.message}`);
+    throw error;
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+module.exports = { 
+  executeSQL, 
+  initializeMariaDB, 
+  initializeDBSchema,
+  queryDB,
+  insertDB 
+}

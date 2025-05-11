@@ -1,5 +1,5 @@
-const { executeSQL } = require('./database')
 require('dotenv').config();
+const { executeSQL } = require('./database');
 const { body, validationResult } = require("express-validator");
 const { initializeMariaDB, queryDB, insertDB } = require("./database");
 const bcrypt = require("bcrypt");
@@ -39,26 +39,34 @@ const users = async (req, res) => {
 async function authenticateToken(req, res, next) {
   try {
     console.log(`Authenticating token for ${req.method} ${req.originalUrl}`);
+    console.log(`Using secret key: ${secretKey.substring(0, 3)}...`);
+    
     const authHeader = req.headers["authorization"];
     if (!authHeader) {
       console.warn("Authorization header missing");
       return res.status(401).json({ message: "Unauthorized: Token missing" });
     }
+    
     const token = authHeader.split(" ")[1];
     if (!token) {
       console.warn("Token not found in authorization header");
       return res.status(401).json({ message: "Unauthorized: Token missing" });
     }
+    
+    console.log(`Token to verify: ${token.substring(0, 10)}...`);
+    
     req.user = await new Promise((resolve, reject) => {
       jwt.verify(token, secretKey, (err, decoded) => {
         if (err) {
           console.error(`Token verification failed: ${err.message}`);
           reject(err);
         } else {
+          console.log(`Token decoded successfully: ${JSON.stringify(decoded)}`);
           resolve(decoded);
         }
       });
     });
+    
     console.log(`Token authenticated for user: ${req.user.username}`);
     next();
   } catch (err) {
@@ -69,17 +77,26 @@ async function authenticateToken(req, res, next) {
 
 
 
-// Socket.io Authentifizierung
+// Socket.io Authentication
 const authenticateSocketToken = (socket, next) => {
+  console.log('Socket.io: authenticating connection...');
+  
   const token = socket.handshake.auth.token;
   if (!token) {
-    return next(new Error('Nicht authentifiziert'));
+    console.error('Socket.io: No token provided');
+    return next(new Error('Authentication required'));
   }
-
+  
+  console.log(`Socket.io: Token received: ${token.substring(0, 10)}...`);
+  console.log(`Socket.io: Using secret key: ${secretKey.substring(0, 3)}...`);
+  
   jwt.verify(token, secretKey, (err, decoded) => {
     if (err) {
-      return next(new Error('Ungültiger Token'));
+      console.error(`Socket.io: Token verification failed: ${err.message}`);
+      return next(new Error('Invalid token'));
     }
+    
+    console.log(`Socket.io: Token verified for user: ${decoded.username}`);
     socket.user = decoded;
     next();
   });
@@ -130,22 +147,33 @@ const register = async (req, res) => {
     const { username, password } = req.body;
     console.log(`Registration attempt for user: ${username}`);
 
-    if (!username || !password) {
-      console.warn("Registration failed: Missing username or password");
-      return res.status(400).json({ error: "Username and password are required" });
+    // Manual validation check - should not be needed with express-validator but adding as a safeguard
+    if (!username || username.length < 3) {
+      console.warn(`Registration validation failed: Username must be at least 3 characters long`);
+      return res.status(400).json({ error: "Username must be at least 3 characters long" });
     }
+
+    if (!password || password.length < 6) {
+      console.warn(`Registration validation failed: Password must be at least 6 characters long`);
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+
+    // Log the actual values being validated
+    console.log(`Validating username: "${username}" (length: ${username.length})`);
+    console.log(`Validating password length: ${password.length}`);
 
     // Check if user already exists
     const checkQuery = "SELECT * FROM users WHERE username = ?";
     const existingUsers = await queryDB(db, checkQuery, [username]);
 
-    if (existingUsers.length > 0) {
+    if (existingUsers && existingUsers.length > 0) {
       console.warn(`Registration failed: User ${username} already exists`);
       return res.status(400).json({ error: "User already exists" });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log(`Password hashed successfully`);
 
     // Insert user into the database
     const insertQuery = "INSERT INTO users (username, password) VALUES (?, ?)";
@@ -307,7 +335,13 @@ const updateUserActivity = async (userId) => {
 
 const initializeAPI = async (app, server) => {
   // Initialize database
-  db = await initializeMariaDB();
+  try {
+    db = await initializeMariaDB();
+    console.log("Database connection initialized successfully");
+  } catch (error) {
+    console.error("Failed to initialize database:", error);
+    throw error;
+  }
 
   // Initialize Socket.io
   io = require('socket.io')(server, {
@@ -398,20 +432,25 @@ const initializeAPI = async (app, server) => {
       "/api/register",
       [
         body("username")
+            .notEmpty()
+            .withMessage("Username is required")
             .isLength({ min: 3 })
             .withMessage("Username must be at least 3 characters long")
-            .trim()
-            .escape(),
+            .trim(),
         body("password")
+            .notEmpty()
+            .withMessage("Password is required")
             .isLength({ min: 6 })
             .withMessage("Password must be at least 6 characters long")
-            .trim()
       ],
       async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
           console.warn("Registration validation failed", { errors: errors.array() });
-          return res.status(400).json({ errors: errors.array() });
+          
+          // Return the first error message for simplicity
+          const firstError = errors.array()[0];
+          return res.status(400).json({ error: firstError.msg });
         }
         await register(req, res);
       }
@@ -422,13 +461,10 @@ const initializeAPI = async (app, server) => {
       "/api/login",
       [
         body("username")
-            .trim()
-            .escape()
             .notEmpty()
-            .withMessage("Username is required"),
+            .withMessage("Username is required")
+            .trim(),
         body("password")
-            .trim()
-            .escape()
             .notEmpty()
             .withMessage("Password is required")
       ],
@@ -436,7 +472,10 @@ const initializeAPI = async (app, server) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
           console.warn("Login validation failed", { errors: errors.array() });
-          return res.status(400).json({ errors: errors.array() });
+          
+          // Return the first error message for simplicity
+          const firstError = errors.array()[0];
+          return res.status(400).json({ error: firstError.msg });
         }
         await login(req, res);
       }

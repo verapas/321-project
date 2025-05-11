@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express')
 const http = require('http')
 var livereload = require('livereload')
@@ -9,6 +10,10 @@ const { initializeMariaDB, initializeDBSchema } = require('./server/database')
 // Create the express server
 const app = express()
 const server = http.createServer(app)
+
+// Parse JSON request bodies
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
 // create a livereload server
 // ONLY FOR DEVELOPMENT important to remove in production
@@ -40,19 +45,31 @@ app.get("/login", (req, res) => {
 app.get("/register", (req, res) => {
   res.sendFile(__dirname + "/client/register.html");
 });
-// Initialize the websocket server
-initializeWebsocketServer(server)
-// Initialize the REST api
-initializeAPI(app)
-
 // Allowing top-level await
 ;(async function () {
-  // Initialize the database
-  initializeMariaDB()
-  await initializeDBSchema()
-  //start the web server
-  const serverPort = process.env.PORT || 3000
-  server.listen(serverPort, () => {
-    console.log(`Express Server started on port ${serverPort} as '${env}' Environment`)
-  })
+  try {
+    // Initialize the database first
+    console.log("Starting database initialization...");
+    const dbPool = await initializeMariaDB();
+    console.log("Database pool created successfully");
+    
+    await initializeDBSchema();
+    console.log("Database schema initialized successfully");
+    
+    // Initialize the websocket server AFTER database is ready
+    initializeWebsocketServer(server);
+    
+    // Initialize the REST api AFTER database is ready
+    await initializeAPI(app, server);
+    console.log("API initialized successfully");
+    
+    // Start the web server
+    const serverPort = process.env.PORT || 3000;
+    server.listen(serverPort, () => {
+      console.log(`Express Server started on port ${serverPort} as '${env}' Environment`);
+    });
+  } catch (error) {
+    console.error("Failed to initialize the application:", error);
+    process.exit(1);
+  }
 })()
