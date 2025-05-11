@@ -8,20 +8,6 @@ const secretKey = process.env.SECRET_KEY || 'fallback-secret-key';
 let db;
 let io;
 
-/**
- * Initializes the API endpoints.
- * @example
- * initializeAPI(app);
- * @param {Object} app - The express app object.
- * @returns {void}
- */
-const initializeAPI = (app) => {
-  console.log('Initializing API')
-  // default REST api endpoint
-  app.get('/api/hello', hello)
-  app.get('/api/users', users)
-  console.log('API initialized')
-}
 
 /**
  * A simple hello world endpoint.
@@ -177,6 +163,338 @@ const register = async (req, res) => {
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+const getMessages = async (req, res) => {
+  try {
+    console.log(`Fetching messages for user: ${req.user.username}`);
+
+    // Load all messages from the chat
+    const query = `
+      SELECT messages.id, messages.content, messages.timestamp, users.username as sender
+      FROM messages
+             JOIN users ON messages.sender_id = users.id
+      ORDER BY messages.timestamp ASC
+        LIMIT 100
+    `;
+
+    const messages = await queryDB(db, query);
+
+    console.log(`Messages fetched successfully for user: ${req.user.username}`);
+    res.json(messages);
+  } catch (err) {
+    console.error(`Error fetching messages for user ${req.user.username}: ${err.message}`);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+const sendMessage = async (req, res) => {
+  try {
+    console.log(`User ${req.user.username} is sending a new message`);
+
+    const { content } = req.body;
+    if (!content || content.trim() === "") {
+      console.warn("Message sending failed: Message content is required");
+      return res.status(400).json({ error: "Message content is required" });
+    }
+
+    // Get user ID from token
+    const userId = req.user.id;
+    const timestamp = new Date().toISOString();
+
+    // Insert message into database
+    const query = "INSERT INTO messages (sender_id, content, timestamp) VALUES (?, ?, ?)";
+    const result = await insertDB(db, query, [userId, content, timestamp]);
+
+    // Send message to all connected clients
+    const messageData = {
+      id: result.insertId,
+      sender_id: userId,
+      sender: req.user.username,
+      content: content,
+      timestamp: timestamp
+    };
+
+    // Broadcast to all clients via Socket.io
+    io.emit('new_message', messageData);
+
+    console.log(`Message sent successfully by user ${req.user.username}`);
+    res.json({ status: "ok", message: messageData });
+  } catch (err) {
+    console.error(`Error sending message for user ${req.user.username}: ${err.message}`);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Function to retrieve active users
+const getActiveUsers = async (req, res) => {
+  try {
+    console.log(`Fetching active users for user: ${req.user.username}`);
+
+    // Get active users from database (users active in the last 5 minutes)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const query = `
+      SELECT users.id, users.username, active_users.last_active
+      FROM active_users
+             JOIN users ON active_users.user_id = users.id
+      WHERE active_users.last_active > ?
+    `;
+
+    const activeUsers = await queryDB(db, query, [fiveMinutesAgo]);
+
+    console.log(`Active users fetched successfully for user: ${req.user.username}`);
+    res.json(activeUsers);
+  } catch (err) {
+    console.error(`Error fetching active users for user ${req.user.username}: ${err.message}`);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// Function to update user typing status
+const setUserTyping = async (req, res) => {
+  try {
+    const { isTyping } = req.body;
+    const userId = req.user.id;
+    const username = req.user.username;
+
+    // Broadcast to all clients that user is typing
+    io.emit('user_typing', { userId, username, isTyping });
+
+    res.json({ status: "ok" });
+  } catch (err) {
+    console.error(`Error updating typing status for user ${req.user.username}: ${err.message}`);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Function to update user's active status
+const updateUserActivity = async (userId) => {
+  try {
+    const timestamp = new Date().toISOString();
+
+    // Check if user already exists in active_users table
+    const checkQuery = "SELECT * FROM active_users WHERE user_id = ?";
+    const existingUser = await queryDB(db, checkQuery, [userId]);
+
+    if (existingUser.length > 0) {
+      // Update existing record
+      const updateQuery = "UPDATE active_users SET last_active = ? WHERE user_id = ?";
+      await queryDB(db, updateQuery, [timestamp, userId]);
+    } else {
+      // Insert new record
+      const insertQuery = "INSERT INTO active_users (user_id, last_active) VALUES (?, ?)";
+      await insertDB(db, insertQuery, [userId, timestamp]);
+    }
+
+    // Get updated list of active users
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const activeUsersQuery = `
+      SELECT users.id, users.username
+      FROM active_users
+      JOIN users ON active_users.user_id = users.id
+      WHERE active_users.last_active > ?
+    `;
+
+    const activeUsers = await queryDB(db, activeUsersQuery, [fiveMinutesAgo]);
+
+    // Broadcast updated active users list
+    io.emit('active_users_updated', activeUsers);
+
+  } catch (err) {
+    console.error(`Error updating user activity: ${err.message}`);
+  }
+};
+
+
+const initializeAPI = async (app, server) => {
+  // Initialize database
+  db = await initializeDatabase();
+
+  // Initialize Socket.io
+  io = require('socket.io')(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  // Socket.io authentication middleware
+  io.use(authenticateSocketToken);
+
+  // Socket.io connection handling
+  io.on('connection', (socket) => {
+    console.log(`User ${socket.user.username} connected`);
+
+    // Update user activity when connected
+    updateUserActivity(socket.user.id);
+
+    // Set up periodic activity update (every minute)
+    const activityInterval = setInterval(() => {
+      updateUserActivity(socket.user.id);
+    }, 60000);
+
+    // Handle user typing events
+    socket.on('user_typing', (data) => {
+      // Broadcast to all clients except sender
+      socket.broadcast.emit('user_typing', {
+        userId: socket.user.id,
+        username: socket.user.username,
+        isTyping: data.isTyping
+      });
+    });
+
+    // Handle disconnect
+    socket.on('disconnect', () => {
+      console.log(`User ${socket.user.username} disconnected`);
+      clearInterval(activityInterval);
+
+      // Update active users list after a short delay
+      setTimeout(() => {
+        updateUserActivity(socket.user.id);
+      }, 1000);
+    });
+  });
+
+  // API Routes
+
+  // Get messages
+  app.get("/api/messages", authenticateToken, async (req, res) => {
+    await getMessages(req, res);
+  });
+
+  // Send message
+  app.post(
+      "/api/messages",
+      authenticateToken,
+      [
+        body("content")
+            .trim()
+            .notEmpty()
+            .withMessage("Message content cannot be empty")
+      ],
+      async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          console.warn("Message validation failed", { errors: errors.array() });
+          return res.status(400).json({ errors: errors.array() });
+        }
+        await sendMessage(req, res);
+        // Update user activity when sending a message
+        updateUserActivity(req.user.id);
+      }
+  );
+
+  // Get active users
+  app.get("/api/users/active", authenticateToken, async (req, res) => {
+    await getActiveUsers(req, res);
+  });
+
+  // Update typing status
+  app.post("/api/users/typing", authenticateToken, async (req, res) => {
+    await setUserTyping(req, res);
+  });
+
+  // Register user
+  app.post(
+      "/api/register",
+      [
+        body("username")
+            .isLength({ min: 3 })
+            .withMessage("Username must be at least 3 characters long")
+            .trim()
+            .escape(),
+        body("password")
+            .isLength({ min: 6 })
+            .withMessage("Password must be at least 6 characters long")
+            .trim()
+      ],
+      async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          console.warn("Registration validation failed", { errors: errors.array() });
+          return res.status(400).json({ errors: errors.array() });
+        }
+        await register(req, res);
+      }
+  );
+
+  // Login user
+  app.post(
+      "/api/login",
+      [
+        body("username")
+            .trim()
+            .escape()
+            .notEmpty()
+            .withMessage("Username is required"),
+        body("password")
+            .trim()
+            .escape()
+            .notEmpty()
+            .withMessage("Password is required")
+      ],
+      async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          console.warn("Login validation failed", { errors: errors.array() });
+          return res.status(400).json({ errors: errors.array() });
+        }
+        await login(req, res);
+      }
+  );
+
+  // Update username
+  app.put(
+      "/api/users/username",
+      authenticateToken,
+      [
+        body("username")
+            .isLength({ min: 3 })
+            .withMessage("Username must be at least 3 characters long")
+            .trim()
+            .escape()
+      ],
+      async (req, res) => {
+        try {
+          const errors = validationResult(req);
+          if (!errors.isEmpty()) {
+            console.warn("Username update validation failed", { errors: errors.array() });
+            return res.status(400).json({ errors: errors.array() });
+          }
+
+          const { username } = req.body;
+          const userId = req.user.id;
+
+          // Check if username is already taken
+          const checkQuery = "SELECT * FROM users WHERE username = ? AND id != ?";
+          const existingUsers = await queryDB(db, checkQuery, [username, userId]);
+
+          if (existingUsers.length > 0) {
+            console.warn(`Username update failed: Username ${username} already exists`);
+            return res.status(400).json({ error: "Username already exists" });
+          }
+
+          // Update username
+          const updateQuery = "UPDATE users SET username = ? WHERE id = ?";
+          await queryDB(db, updateQuery, [username, userId]);
+
+          // Create new token with updated username
+          const tokenPayload = {
+            id: userId,
+            username: username
+          };
+
+          const token = jwt.sign(tokenPayload, secretKey, { expiresIn: "1h" });
+
+          console.log(`Username updated successfully for user ID ${userId}`);
+          res.json({ token, username, id: userId });
+        } catch (err) {
+          console.error(`Username update error: ${err.message}`);
+          res.status(500).json({ error: "Internal server error" });
+        }
+      }
+  );
+};
+
 
 
 module.exports = { initializeAPI }
