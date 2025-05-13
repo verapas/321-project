@@ -28,7 +28,6 @@ const onConnection = (ws) => {
   ws.on('message', (message) => onMessage(ws, message))
 }
 
-// If a new message is received, the onMessage function is called
 /**
  * Handles a new message from a websocket connection.
  * @example

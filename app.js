@@ -56,9 +56,6 @@ app.get("/register", (req, res) => {
     await initializeDBSchema();
     console.log("Database schema initialized successfully");
     
-    // Initialize the websocket server AFTER database is ready
-    initializeWebsocketServer(server);
-    
     // Initialize the REST api AFTER database is ready
     await initializeAPI(app, server);
     console.log("API initialized successfully");

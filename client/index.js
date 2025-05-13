@@ -12,7 +12,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const saveUsernameButton = document.getElementById("save-username");
     const cancelUsernameButton = document.getElementById("cancel-username");
     const usernameError = document.getElementById("username-error");
-    const typingIndicator = document.getElementById("typing-indicator");
+    const typingIndicatorsContainer = document.getElementById("typing-indicators-container");
+    
+    // Track users who are currently typing
+    const typingUsers = new Map();
+    
+    // Initially hide the typing indicators container
+    typingIndicatorsContainer.classList.add('hidden');
 
     // Load user from local storage
     const user = JSON.parse(localStorage.getItem("user"));
@@ -147,7 +153,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (response.ok) {
                 messageInput.value = "";
-                // Reset typing state
+                
+                // Reset typing state since the input is now empty
                 if (isTyping) {
                     isTyping = false;
                     socket.emit('user_typing', { isTyping });
@@ -210,28 +217,58 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // Function to update typing indicators
+    const updateTypingIndicators = () => {
+        // Clear the container
+        typingIndicatorsContainer.innerHTML = '';
+        
+        // If no one is typing, hide the container
+        if (typingUsers.size === 0) {
+            typingIndicatorsContainer.classList.add('hidden');
+            return;
+        }
+        
+        // Show the container
+        typingIndicatorsContainer.classList.remove('hidden');
+        
+        // Create the typing message based on who is typing
+        const typingUsersList = Array.from(typingUsers.values());
+        
+        if (typingUsersList.length === 1) {
+            // One user typing
+            typingIndicatorsContainer.textContent = `${typingUsersList[0]} is typing...`;
+        } else if (typingUsersList.length === 2) {
+            // Two users typing
+            typingIndicatorsContainer.textContent = `${typingUsersList[0]} and ${typingUsersList[1]} are typing...`;
+        } else if (typingUsersList.length === 3) {
+            // Three users typing
+            typingIndicatorsContainer.textContent = `${typingUsersList[0]}, ${typingUsersList[1]}, and ${typingUsersList[2]} are typing...`;
+        } else {
+            // More than three users typing
+            typingIndicatorsContainer.textContent = `${typingUsersList.length} people are typing...`;
+        }
+    };
+
+    // Handle user typing in the input field
     const handleTyping = () => {
-        if (!isTyping) {
-            isTyping = true;
+        // Check if the input field has content
+        const hasContent = messageInput.value.trim() !== '';
+        
+        // Only emit a typing event when the state changes
+        if (hasContent !== isTyping) {
+            isTyping = hasContent;
             socket.emit('user_typing', { isTyping });
         }
-
-        // Reset timeout
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-            isTyping = false;
-            socket.emit('user_typing', { isTyping });
-        }, 2000);
     };
 
     // Event listeners
     sendMessageButton.addEventListener("click", sendMessage);
 
+    messageInput.addEventListener("input", handleTyping);
+    
     messageInput.addEventListener("keyup", (event) => {
         if (event.key === "Enter") {
             sendMessage();
-        } else {
-            handleTyping();
         }
     });
 
@@ -288,14 +325,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     socket.on('user_typing', (data) => {
-        if (data.userId !== user.id) {
-            if (data.isTyping) {
-                typingIndicator.textContent = `${data.username} is typing...`;
-                typingIndicator.classList.remove("hidden");
-            } else {
-                typingIndicator.classList.add("hidden");
-            }
+        // Ignore our own typing events
+        if (data.userId.toString() === user.id.toString()) {
+            return;
         }
+        
+        // Add or remove user from typing users map
+        if (data.isTyping) {
+            // Add this user to the typing users map
+            typingUsers.set(data.userId.toString(), data.username);
+        } else {
+            // Remove this user from the typing users map
+            typingUsers.delete(data.userId.toString());
+        }
+        
+        // Update the typing indicators display
+        updateTypingIndicators();
     });
 
     // Initial data load

@@ -8,32 +8,11 @@ const secretKey = process.env.SECRET_KEY || 'fallback-secret-key';
 let db;
 let io;
 
+// Helper function to format datetime for MariaDB
+const formatDateForDB = (date) => {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+};
 
-/**
- * A simple hello world endpoint.
- * @example
- * hello(req, res);
- * @param {Object} req - The request object.
- * @param {Object} res - The response object.
- * @returns {void}
- */
-const hello = (req, res) => {
-  res.send('Hello World!')
-}
-
-/**
- * A simple users that shows the use of the database for insert and select statements.
- * @example
- * users(req, res);
- * @param {Object} req - The request object.
- * @param {Object} res - The response object.
- * @returns {void}
- */
-const users = async (req, res) => {
-  await executeSQL("INSERT INTO users (name) VALUES ('John Doe');")
-  const result = await executeSQL('SELECT * FROM users;')
-  res.json(result)
-}
 
 // Middleware for token authentication with logging
 async function authenticateToken(req, res, next) {
@@ -77,29 +56,45 @@ async function authenticateToken(req, res, next) {
 
 
 
+// Track active users in memory
+const activeUsers = new Map();
+
 // Socket.io Authentication
 const authenticateSocketToken = (socket, next) => {
   console.log('Socket.io: authenticating connection...');
   
-  const token = socket.handshake.auth.token;
-  if (!token) {
-    console.error('Socket.io: No token provided');
-    return next(new Error('Authentication required'));
-  }
-  
-  console.log(`Socket.io: Token received: ${token.substring(0, 10)}...`);
-  console.log(`Socket.io: Using secret key: ${secretKey.substring(0, 3)}...`);
-  
-  jwt.verify(token, secretKey, (err, decoded) => {
-    if (err) {
-      console.error(`Socket.io: Token verification failed: ${err.message}`);
-      return next(new Error('Invalid token'));
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      console.error('Socket.io: No token provided');
+      return next(new Error('Authentication required'));
     }
     
-    console.log(`Socket.io: Token verified for user: ${decoded.username}`);
-    socket.user = decoded;
-    next();
-  });
+    console.log(`Socket.io: Token received: ${token.substring(0, 10)}...`);
+    console.log(`Socket.io: Using secret key: ${secretKey.substring(0, 3)}...`);
+    
+    jwt.verify(token, secretKey, (err, decoded) => {
+      if (err) {
+        console.error(`Socket.io: Token verification failed: ${err.message}`);
+        return next(new Error('Invalid token'));
+      }
+      
+      console.log(`Socket.io: Token verified for user: ${decoded.username}`);
+      socket.user = decoded;
+      
+      // Add user to active users map when they connect
+      activeUsers.set(decoded.id.toString(), {
+        id: decoded.id,
+        username: decoded.username,
+        socketId: socket.id
+      });
+      
+      next();
+    });
+  } catch (error) {
+    console.error('Socket.io authentication error:', error);
+    return next(new Error('Socket authentication error'));
+  }
 };
 
 const login = async (req, res) => {
@@ -227,19 +222,28 @@ const sendMessage = async (req, res) => {
 
     // Get user ID from token
     const userId = req.user.id;
-    const timestamp = new Date().toISOString();
+    const now = new Date();
+    
+    // Format for DB: YYYY-MM-DD HH:MM:SS
+    const dbTimestamp = formatDateForDB(now);
+    
+    // For client response we can use ISO format
+    const isoTimestamp = now.toISOString();
 
     // Insert message into database
     const query = "INSERT INTO messages (sender_id, content, timestamp) VALUES (?, ?, ?)";
-    const result = await insertDB(db, query, [userId, content, timestamp]);
+    const result = await insertDB(db, query, [userId, content, dbTimestamp]);
 
     // Send message to all connected clients
+    // Convert any BigInt values to regular numbers
+    const insertId = typeof result.insertId === 'bigint' ? Number(result.insertId) : result.insertId;
+    
     const messageData = {
-      id: result.insertId,
-      sender_id: userId,
+      id: insertId,
+      sender_id: Number(userId),
       sender: req.user.username,
       content: content,
-      timestamp: timestamp
+      timestamp: isoTimestamp  // Use ISO format for client display
     };
 
     // Broadcast to all clients via Socket.io
@@ -258,19 +262,11 @@ const getActiveUsers = async (req, res) => {
   try {
     console.log(`Fetching active users for user: ${req.user.username}`);
 
-    // Get active users from database (users active in the last 5 minutes)
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const query = `
-      SELECT users.id, users.username, active_users.last_active
-      FROM active_users
-             JOIN users ON active_users.user_id = users.id
-      WHERE active_users.last_active > ?
-    `;
-
-    const activeUsers = await queryDB(db, query, [fiveMinutesAgo]);
-
-    console.log(`Active users fetched successfully for user: ${req.user.username}`);
-    res.json(activeUsers);
+    // Get active users from memory instead of database
+    const currentActiveUsers = Array.from(activeUsers.values());
+    
+    console.log(`Active users (${currentActiveUsers.length}) fetched successfully for user: ${req.user.username}`);
+    res.json(currentActiveUsers);
   } catch (err) {
     console.error(`Error fetching active users for user ${req.user.username}: ${err.message}`);
     res.status(500).json({ error: "Internal Server Error" });
@@ -294,44 +290,6 @@ const setUserTyping = async (req, res) => {
   }
 };
 
-// Function to update user's active status
-const updateUserActivity = async (userId) => {
-  try {
-    const timestamp = new Date().toISOString();
-
-    // Check if user already exists in active_users table
-    const checkQuery = "SELECT * FROM active_users WHERE user_id = ?";
-    const existingUser = await queryDB(db, checkQuery, [userId]);
-
-    if (existingUser.length > 0) {
-      // Update existing record
-      const updateQuery = "UPDATE active_users SET last_active = ? WHERE user_id = ?";
-      await queryDB(db, updateQuery, [timestamp, userId]);
-    } else {
-      // Insert new record
-      const insertQuery = "INSERT INTO active_users (user_id, last_active) VALUES (?, ?)";
-      await insertDB(db, insertQuery, [userId, timestamp]);
-    }
-
-    // Get updated list of active users
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const activeUsersQuery = `
-      SELECT users.id, users.username
-      FROM active_users
-      JOIN users ON active_users.user_id = users.id
-      WHERE active_users.last_active > ?
-    `;
-
-    const activeUsers = await queryDB(db, activeUsersQuery, [fiveMinutesAgo]);
-
-    // Broadcast updated active users list
-    io.emit('active_users_updated', activeUsers);
-
-  } catch (err) {
-    console.error(`Error updating user activity: ${err.message}`);
-  }
-};
-
 
 const initializeAPI = async (app, server) => {
   // Initialize database
@@ -344,31 +302,36 @@ const initializeAPI = async (app, server) => {
   }
 
   // Initialize Socket.io
+  console.log("Initializing Socket.io server");
   io = require('socket.io')(server, {
     cors: {
       origin: "*",
       methods: ["GET", "POST"]
-    }
+    },
+    transports: ['websocket', 'polling']
   });
+  console.log("Socket.io server initialized");
 
   // Socket.io authentication middleware
   io.use(authenticateSocketToken);
+
+  // Helper function to broadcast active users
+  const broadcastActiveUsers = () => {
+    const activeUsersList = Array.from(activeUsers.values());
+    console.log(`Broadcasting ${activeUsersList.length} active users`);
+    io.emit('active_users_updated', activeUsersList);
+  };
 
   // Socket.io connection handling
   io.on('connection', (socket) => {
     console.log(`User ${socket.user.username} connected`);
 
-    // Update user activity when connected
-    updateUserActivity(socket.user.id);
-
-    // Set up periodic activity update (every minute)
-    const activityInterval = setInterval(() => {
-      updateUserActivity(socket.user.id);
-    }, 60000);
+    // Broadcast updated active users list
+    broadcastActiveUsers();
 
     // Handle user typing events
     socket.on('user_typing', (data) => {
-      // Broadcast to all clients except sender
+      // Broadcast typing status to all clients except sender
       socket.broadcast.emit('user_typing', {
         userId: socket.user.id,
         username: socket.user.username,
@@ -379,12 +342,20 @@ const initializeAPI = async (app, server) => {
     // Handle disconnect
     socket.on('disconnect', () => {
       console.log(`User ${socket.user.username} disconnected`);
-      clearInterval(activityInterval);
-
-      // Update active users list after a short delay
-      setTimeout(() => {
-        updateUserActivity(socket.user.id);
-      }, 1000);
+      const userId = socket.user.id;
+      
+      // Remove user from active users map
+      activeUsers.delete(userId.toString());
+      
+      // Broadcast that user is no longer typing
+      socket.broadcast.emit('user_typing', {
+        userId: userId,
+        username: socket.user.username,
+        isTyping: false
+      });
+      
+      // Broadcast updated active users list after user disconnects
+      broadcastActiveUsers();
     });
   });
 
@@ -412,8 +383,7 @@ const initializeAPI = async (app, server) => {
           return res.status(400).json({ errors: errors.array() });
         }
         await sendMessage(req, res);
-        // Update user activity when sending a message
-        updateUserActivity(req.user.id);
+        // Active users are tracked via socket connections, no need to update here
       }
   );
 
@@ -533,7 +503,5 @@ const initializeAPI = async (app, server) => {
       }
   );
 };
-
-
 
 module.exports = { initializeAPI }
