@@ -32,12 +32,12 @@
 </head>
 <body class="flex flex-col w-screen h-screen gap-3 text-white bg-slate-800 items-center">
 <header class="flex items-center justify-between flex-shrink-0 pt-3 h-14 w-full max-w-4xl">
-  <h1 class="text-2xl font-bold">💬 Chat Application</h1>
-  <div class="flex items-center gap-4">
+  <h1 class="text-2xl font-bold ml-3">💬 Chat Application</h1>
+  <div class="flex items-center gap-4 mr-3">
     <div class="flex items-center gap-2">
       <span id="username-display" class="text-blue-300"></span>
-      <button id="edit-username" class="text-xs text-gray-400 hover:text-white">
-        Edit
+      <button id="edit-username" class="px-4 py-2 bg-green-500 hover:bg-green-400 rounded">
+        Edit username
       </button>
     </div>
     <button id="logout" class="px-4 py-2 bg-red-500 hover:bg-red-400 rounded">
@@ -47,7 +47,7 @@
 </header>
 <main class="flex grow max-w-4xl w-full gap-4 overflow-hidden">
   <!-- Chat messages area -->
-  <div class="flex flex-col grow bg-slate-700 rounded-lg overflow-hidden">
+  <div class="flex flex-col grow bg-slate-700 rounded-lg overflow-hidden ml-3">
     <div id="messages-container" class="flex flex-col grow p-4 overflow-y-auto gap-3">
       <!-- Messages will be inserted here -->
     </div>
@@ -71,8 +71,8 @@
   </div>
 
   <!-- Active users sidebar -->
-  <div class="w-64 bg-slate-700 rounded-lg flex flex-col">
-    <div class="p-3 bg-slate-600 font-semibold">
+  <div class="w-64 bg-slate-700 rounded-lg flex flex-col mr-3">
+    <div class="p-3 bg-slate-600 rounded-lg font-semibold">
       Active Users
     </div>
     <div id="active-users" class="p-3 flex flex-col gap-2 overflow-y-auto grow">
