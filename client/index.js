@@ -1,3 +1,7 @@
+/**
+ * Initializes the chat application
+ * @description Sets up event listeners, socket connection, and UI components
+ */
 document.addEventListener("DOMContentLoaded", () => {
     // DOM elements
     const messageInput = document.getElementById("message-input");
@@ -41,7 +45,11 @@ document.addEventListener("DOMContentLoaded", () => {
     let isTyping = false;
     let typingTimeout = null;
 
-    // Generate message HTML
+    /**
+     * Generates HTML for a chat message
+     * @param {Object} message - Message object with sender, content, and timestamp
+     * @returns {string} - HTML string for the message
+     */
     const generateMessage = (message) => {
         const date = new Date(message.timestamp).toLocaleDateString("de-CH", {
             hour: "numeric",
@@ -63,7 +71,11 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
     };
 
-    // Generate active user HTML
+    /**
+     * Generates HTML for an active user in the sidebar
+     * @param {Object} activeUser - User object with username
+     * @returns {string} - HTML string for the active user
+     */
     const generateActiveUser = (activeUser) => {
         const isCurrentUser = activeUser.username === user.username;
         return `
@@ -75,7 +87,11 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
     };
 
-    // Escape HTML to prevent XSS
+    /**
+     * Escapes HTML special characters to prevent XSS attacks
+     * @param {string} unsafe - Raw string that might contain HTML
+     * @returns {string} - Escaped safe HTML string
+     */
     const escapeHtml = (unsafe) => {
         return unsafe
             .replace(/&/g, "&amp;")
@@ -85,7 +101,10 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/'/g, "&#039;");
     };
 
-    // Fetch messages
+    /**
+     * Fetches chat history from the server
+     * @returns {Promise<void>} - Retrieves and displays message history
+     */
     const getMessages = async () => {
         try {
             const response = await fetch("/api/messages", {
@@ -101,17 +120,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     messagesContainer.innerHTML = messages.map(generateMessage).join("");
                     // Scroll to bottom
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                } else {
-                    console.error("Messages is not an array:", messages);
                 }
-            } else {
-                console.error("Error fetching messages:", response.statusText);
             }
         } catch (err) {
-            console.error("Error in getMessages:", err);
+            // Error handling
         }
     };
 
+    /**
+     * Fetches active users list from the server
+     * @returns {Promise<void>} - Retrieves and displays active users
+     */
     const getActiveUsers = async () => {
         try {
             const response = await fetch("/api/users/active", {
@@ -136,7 +155,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Send message
+    /**
+     * Sends a new message to the server
+     * @returns {Promise<void>} - Sends message and resets input field
+     */
     const sendMessage = async () => {
         const content = messageInput.value.trim();
         if (!content) return; // Avoid empty messages
@@ -167,7 +189,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Update username
+    /**
+     * Updates the user's username
+     * @returns {Promise<void>} - Updates username and reconnects socket
+     */
     const updateUsername = async () => {
         const newUsername = newUsernameInput.value.trim();
         usernameError.textContent = "";
@@ -217,7 +242,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Function to update typing indicators
+    /**
+     * Updates the typing indicators display
+     * @description Shows who is currently typing based on typingUsers map
+     */
     const updateTypingIndicators = () => {
         // Clear the container
         typingIndicatorsContainer.innerHTML = '';
@@ -249,7 +277,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Handle user typing in the input field
+    /**
+     * Handles user typing events
+     * @description Detects typing state changes and emits events to server
+     */
     const handleTyping = () => {
         // Check if the input field has content
         const hasContent = messageInput.value.trim() !== '';

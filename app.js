@@ -49,24 +49,19 @@ app.get("/register", (req, res) => {
 ;(async function () {
   try {
     // Initialize the database first
-    console.log("Starting database initialization...");
     const dbPool = await initializeMariaDB();
-    console.log("Database pool created successfully");
     
     await initializeDBSchema();
-    console.log("Database schema initialized successfully");
     
     // Initialize the REST api AFTER database is ready
     await initializeAPI(app, server);
-    console.log("API initialized successfully");
     
     // Start the web server
     const serverPort = process.env.PORT || 3000;
     server.listen(serverPort, () => {
-      console.log(`Express Server started on port ${serverPort} as '${env}' Environment`);
+      // Server started
     });
   } catch (error) {
-    console.error("Failed to initialize the application:", error);
     process.exit(1);
   }
 })()

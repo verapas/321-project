@@ -10,10 +10,8 @@ const clients = []
  * @returns {void}
  */
 const initializeWebsocketServer = (server) => {
-  console.log('Initializing websocket server')
   const websocketServer = new WebSocket.Server({ server })
   websocketServer.on('connection', onConnection)
-  console.log('Websocket server initialized')
 }
 
 /**
@@ -24,7 +22,6 @@ const initializeWebsocketServer = (server) => {
  * @returns {void}
  */
 const onConnection = (ws) => {
-  console.log('New websocket connection')
   ws.on('message', (message) => onMessage(ws, message))
 }
 
@@ -38,7 +35,6 @@ const onConnection = (ws) => {
 const onMessage = (ws, messageBuffer) => {
   const messageString = messageBuffer.toString()
   const message = JSON.parse(messageString)
-  console.log('Received message: ' + messageString)
   // The message type is checked and the appropriate action is taken
   switch (message.type) {
     case 'user': {

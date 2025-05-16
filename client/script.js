@@ -3,9 +3,12 @@
 // replace localhost with the server's IP address or domain name.
 const socket = new WebSocket('ws://localhost:3000')
 
-// Listen for WebSocket open event
+/**
+ * Handles WebSocket connection open event
+ * @param {Event} event - WebSocket open event
+ * @description Sends initial user information to the server
+ */
 socket.addEventListener('open', (event) => {
-  console.log('WebSocket connected.')
   // Send a dummy user to the backend
   const user = { id: 1, name: 'John Doe' }
   const message = {
@@ -15,28 +18,48 @@ socket.addEventListener('open', (event) => {
   socket.send(JSON.stringify(message))
 })
 
+/**
+ * Creates and appends a new message element to the DOM
+ * @param {string} message - Message text to display
+ * @returns {void} - Appends message to the messages container
+ */
 const createMessage = (message) => {
   const p = document.createElement('p')
   p.textContent = message
   document.getElementById('messages').appendChild(p)
 }
 
-// Listen for messages from server
+/**
+ * Handles incoming messages from the server
+ * @param {MessageEvent} event - WebSocket message event
+ * @description Displays received messages in the UI
+ */
 socket.addEventListener('message', (event) => {
-  console.log(`Received message: ${event.data}`)
   createMessage(event.data)
 })
 
-// Listen for WebSocket close event
+/**
+ * Handles WebSocket connection close event
+ * @param {CloseEvent} event - WebSocket close event
+ * @description Logs when the connection is closed
+ */
 socket.addEventListener('close', (event) => {
   console.log('WebSocket closed.')
 })
 
-// Listen for WebSocket errors
+/**
+ * Handles WebSocket connection errors
+ * @param {Event} event - WebSocket error event
+ * @description Logs any connection errors to the console
+ */
 socket.addEventListener('error', (event) => {
   console.error('WebSocket error:', event)
 })
 
+/**
+ * Initializes DOM event listeners when the page loads
+ * @description Sets up click handler for the send button
+ */
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnSendHello').addEventListener('click', () => {
     const message = {

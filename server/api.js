@@ -8,18 +8,26 @@ const secretKey = process.env.SECRET_KEY || 'fallback-secret-key';
 let db;
 let io;
 
-// Helper function to format datetime for MariaDB
+/**
+ * Formats a JavaScript Date object to a MariaDB compatible datetime string
+ * @param {Date} date - The date to format
+ * @returns {string} - Formatted date string in 'YYYY-MM-DD HH:MM:SS' format
+ */
 const formatDateForDB = (date) => {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 };
 
 
-// Middleware for token authentication with logging
+/**
+ * Middleware to authenticate JWT tokens from request headers
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {Promise<void>} - Continues to next middleware or returns error response
+ */
 async function authenticateToken(req, res, next) {
   try {
-    console.log(`Authenticating token for ${req.method} ${req.originalUrl}`);
-    console.log(`Using secret key: ${secretKey.substring(0, 3)}...`);
-    
+
     const authHeader = req.headers["authorization"];
     if (!authHeader) {
       console.warn("Authorization header missing");
@@ -32,21 +40,17 @@ async function authenticateToken(req, res, next) {
       return res.status(401).json({ message: "Unauthorized: Token missing" });
     }
     
-    console.log(`Token to verify: ${token.substring(0, 10)}...`);
-    
     req.user = await new Promise((resolve, reject) => {
       jwt.verify(token, secretKey, (err, decoded) => {
         if (err) {
           console.error(`Token verification failed: ${err.message}`);
           reject(err);
         } else {
-          console.log(`Token decoded successfully: ${JSON.stringify(decoded)}`);
           resolve(decoded);
         }
       });
     });
-    
-    console.log(`Token authenticated for user: ${req.user.username}`);
+
     next();
   } catch (err) {
     console.error(`Authentication error: ${err.message}`);
@@ -59,10 +63,14 @@ async function authenticateToken(req, res, next) {
 // Track active users in memory
 const activeUsers = new Map();
 
-// Socket.io Authentication
+/**
+ * Socket.io middleware to authenticate connections using JWT tokens
+ * @param {Object} socket - Socket.io socket object
+ * @param {Function} next - Socket.io next middleware function
+ * @returns {void} - Continues to next middleware or returns error
+ */
 const authenticateSocketToken = (socket, next) => {
-  console.log('Socket.io: authenticating connection...');
-  
+
   try {
     const token = socket.handshake.auth.token;
     if (!token) {
@@ -70,16 +78,12 @@ const authenticateSocketToken = (socket, next) => {
       return next(new Error('Authentication required'));
     }
     
-    console.log(`Socket.io: Token received: ${token.substring(0, 10)}...`);
-    console.log(`Socket.io: Using secret key: ${secretKey.substring(0, 3)}...`);
-    
     jwt.verify(token, secretKey, (err, decoded) => {
       if (err) {
         console.error(`Socket.io: Token verification failed: ${err.message}`);
         return next(new Error('Invalid token'));
       }
-      
-      console.log(`Socket.io: Token verified for user: ${decoded.username}`);
+
       socket.user = decoded;
       
       // Add user to active users map when they connect
@@ -97,10 +101,15 @@ const authenticateSocketToken = (socket, next) => {
   }
 };
 
+/**
+ * Handles user login authentication and token generation
+ * @param {Object} req - Express request object with username and password
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns token or error response
+ */
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
-    console.log(`Login attempt for user: ${username}`);
 
     const query = `SELECT * FROM users WHERE username = ?`;
     const users = await queryDB(db, query, [username]);
@@ -129,7 +138,6 @@ const login = async (req, res) => {
 
     // Generate signed token (valid for 1 hour)
     const token = jwt.sign(tokenPayload, secretKey, { expiresIn: "1h" });
-    console.log(`User ${username} logged in successfully`);
     res.json({ token, username: user.username, id: user.id });
   } catch (err) {
     console.error(`Login error for user ${req.body.username}: ${err.message}`);
@@ -137,10 +145,15 @@ const login = async (req, res) => {
   }
 };
 
+/**
+ * Handles new user registration with password hashing
+ * @param {Object} req - Express request object with username and password
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns success or error response
+ */
 const register = async (req, res) => {
   try {
     const { username, password } = req.body;
-    console.log(`Registration attempt for user: ${username}`);
 
     // Manual validation check - should not be needed with express-validator but adding as a safeguard
     if (!username || username.length < 3) {
@@ -153,10 +166,6 @@ const register = async (req, res) => {
       return res.status(400).json({ error: "Password must be at least 6 characters long" });
     }
 
-    // Log the actual values being validated
-    console.log(`Validating username: "${username}" (length: ${username.length})`);
-    console.log(`Validating password length: ${password.length}`);
-
     // Check if user already exists
     const checkQuery = "SELECT * FROM users WHERE username = ?";
     const existingUsers = await queryDB(db, checkQuery, [username]);
@@ -168,13 +177,11 @@ const register = async (req, res) => {
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    console.log(`Password hashed successfully`);
 
     // Insert user into the database
     const insertQuery = "INSERT INTO users (username, password) VALUES (?, ?)";
     await insertDB(db, insertQuery, [username, hashedPassword]);
 
-    console.log(`User ${username} registered successfully`);
     res.json({ status: "registered" });
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT' || error.code === 'ER_DUP_ENTRY') {
@@ -187,10 +194,14 @@ const register = async (req, res) => {
   }
 };
 
+/**
+ * Retrieves chat messages from the database
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns messages or error response
+ */
 const getMessages = async (req, res) => {
   try {
-    console.log(`Fetching messages for user: ${req.user.username}`);
-
     // Load all messages from the chat
     const query = `
       SELECT messages.id, messages.content, messages.timestamp, users.username as sender
@@ -202,7 +213,6 @@ const getMessages = async (req, res) => {
 
     const messages = await queryDB(db, query);
 
-    console.log(`Messages fetched successfully for user: ${req.user.username}`);
     res.json(messages);
   } catch (err) {
     console.error(`Error fetching messages for user ${req.user.username}: ${err.message}`);
@@ -210,9 +220,14 @@ const getMessages = async (req, res) => {
   }
 };
 
+/**
+ * Saves a new message to the database and broadcasts to all connected clients
+ * @param {Object} req - Express request object with message content
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns success or error response
+ */
 const sendMessage = async (req, res) => {
   try {
-    console.log(`User ${req.user.username} is sending a new message`);
 
     const { content } = req.body;
     if (!content || content.trim() === "") {
@@ -249,7 +264,6 @@ const sendMessage = async (req, res) => {
     // Broadcast to all clients via Socket.io
     io.emit('new_message', messageData);
 
-    console.log(`Message sent successfully by user ${req.user.username}`);
     res.json({ status: "ok", message: messageData });
   } catch (err) {
     console.error(`Error sending message for user ${req.user.username}: ${err.message}`);
@@ -257,15 +271,16 @@ const sendMessage = async (req, res) => {
   }
 };
 
-// Function to retrieve active users
+/**
+ * Retrieves list of currently active users
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns active users or error response
+ */
 const getActiveUsers = async (req, res) => {
   try {
-    console.log(`Fetching active users for user: ${req.user.username}`);
-
     // Get active users from memory instead of database
     const currentActiveUsers = Array.from(activeUsers.values());
-    
-    console.log(`Active users (${currentActiveUsers.length}) fetched successfully for user: ${req.user.username}`);
     res.json(currentActiveUsers);
   } catch (err) {
     console.error(`Error fetching active users for user ${req.user.username}: ${err.message}`);
@@ -273,7 +288,12 @@ const getActiveUsers = async (req, res) => {
   }
 };
 
-// Function to update user typing status
+/**
+ * Updates and broadcasts a user's typing status
+ * @param {Object} req - Express request object with isTyping status
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns success or error response
+ */
 const setUserTyping = async (req, res) => {
   try {
     const { isTyping } = req.body;
@@ -290,19 +310,22 @@ const setUserTyping = async (req, res) => {
   }
 };
 
-
+/**
+ * Initializes API routes, database connection, and Socket.io server
+ * @param {Object} app - Express application instance
+ * @param {Object} server - HTTP server instance
+ * @returns {Promise<void>} - Initializes API and Socket.io handlers
+ */
 const initializeAPI = async (app, server) => {
   // Initialize database
   try {
     db = await initializeMariaDB();
-    console.log("Database connection initialized successfully");
   } catch (error) {
     console.error("Failed to initialize database:", error);
     throw error;
   }
 
   // Initialize Socket.io
-  console.log("Initializing Socket.io server");
   io = require('socket.io')(server, {
     cors: {
       origin: "*",
@@ -310,7 +333,6 @@ const initializeAPI = async (app, server) => {
     },
     transports: ['websocket', 'polling']
   });
-  console.log("Socket.io server initialized");
 
   // Socket.io authentication middleware
   io.use(authenticateSocketToken);
@@ -318,14 +340,11 @@ const initializeAPI = async (app, server) => {
   // Helper function to broadcast active users
   const broadcastActiveUsers = () => {
     const activeUsersList = Array.from(activeUsers.values());
-    console.log(`Broadcasting ${activeUsersList.length} active users`);
     io.emit('active_users_updated', activeUsersList);
   };
 
   // Socket.io connection handling
   io.on('connection', (socket) => {
-    console.log(`User ${socket.user.username} connected`);
-
     // Broadcast updated active users list
     broadcastActiveUsers();
 
@@ -341,7 +360,6 @@ const initializeAPI = async (app, server) => {
 
     // Handle disconnect
     socket.on('disconnect', () => {
-      console.log(`User ${socket.user.username} disconnected`);
       const userId = socket.user.id;
       
       // Remove user from active users map
@@ -494,7 +512,6 @@ const initializeAPI = async (app, server) => {
 
           const token = jwt.sign(tokenPayload, secretKey, { expiresIn: "1h" });
 
-          console.log(`Username updated successfully for user ID ${userId}`);
           res.json({ token, username, id: userId });
         } catch (err) {
           console.error(`Username update error: ${err.message}`);

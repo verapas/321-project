@@ -1,3 +1,7 @@
+/**
+ * Initializes the registration page functionality
+ * @description Sets up event listeners and form validation for user registration
+ */
 document.addEventListener("DOMContentLoaded", () => {
     const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
