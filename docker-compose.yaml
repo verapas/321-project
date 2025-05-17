@@ -1,4 +1,20 @@
 services:
+
+  app:
+    image: pescel/321_project:1.0.0
+    depends_on:
+      - mariadb
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DB_HOST=mariadb
+      - DB_USER=mychat
+      - DB_PASSWORD=mychatpassword
+      - DB_NAME=mychat
+      - SECRET_KEY=${SECRET_KEY}
+      - AES_SECRET=${AES_SECRET}
+
   mariadb:
     image: mariadb:lts-ubi
     volumes:
