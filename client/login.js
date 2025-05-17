@@ -2,7 +2,12 @@
  * Initializes the login page functionality
  * @description Sets up event listeners and form validation for user login
  */
+/**
+ * Initializes the login page functionality
+ * @description Sets up event listeners and form validation for user login
+ */
 document.addEventListener("DOMContentLoaded", () => {
+    console.log("Login page loaded");
     const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
     const loginButton = document.getElementById("login");
@@ -14,12 +19,12 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const userData = JSON.parse(storedUser);
             if (userData.token) {
-                // Redirect to chat page if already logged in
+                console.log("User already logged in, redirecting to chat");
                 window.location.href = "/";
                 return;
             }
         } catch (e) {
-            // Invalid stored data, clear it
+            console.warn("Invalid user data in localStorage, clearing");
             localStorage.removeItem("user");
         }
     }
@@ -36,6 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Handle login button click
     loginButton.addEventListener("click", async () => {
+        console.log("Login attempt started");
         // Clear previous error
         errorText.innerText = "";
 
@@ -44,11 +50,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const password = passwordInput.value;
 
         if (!username) {
+            console.warn("Login validation failed: Username is required");
             errorText.innerText = "Username is required";
             return;
         }
 
         if (!password) {
+            console.warn("Login validation failed: Password is required");
             errorText.innerText = "Password is required";
             return;
         }
@@ -58,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loginButton.innerText = "Logging in...";
 
         try {
+            console.log(`Attempting to login user: ${username}`);
             const response = await fetch("/api/login", {
                 method: "POST",
                 headers: {
@@ -69,11 +78,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
 
             if (data?.token) {
+                console.log("Login successful");
                 localStorage.setItem("user", JSON.stringify(data));
                 window.location.href = "/";
             } else if (data?.error) {
+                console.warn(`Login failed: ${data.error}`);
                 errorText.innerText = data.error;
             } else {
+                console.warn("Login failed: Unknown error");
                 errorText.innerText = "Unknown error occurred";
             }
         } catch (error) {

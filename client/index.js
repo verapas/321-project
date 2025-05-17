@@ -117,13 +117,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (response.ok) {
                 const messages = await response.json();
                 if (Array.isArray(messages)) {
+                    console.log(`Loaded ${messages.length} messages`);
                     messagesContainer.innerHTML = messages.map(generateMessage).join("");
                     // Scroll to bottom
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 }
             }
         } catch (err) {
-            // Error handling
+            console.error("Error fetching messages:", err);
         }
     };
 
@@ -353,6 +354,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     socket.on('active_users_updated', (activeUsers) => {
         activeUsersContainer.innerHTML = activeUsers.map(generateActiveUser).join("");
+    });
+
+    socket.on('username_updated', (data) => {
+        // Update the username in all messages in the chat history
+        const messageElements = messagesContainer.querySelectorAll('.flex.flex-col');
+        
+        messageElements.forEach(messageElement => {
+            // Find the username display in the message
+            const usernameElement = messageElement.querySelector('.font-semibold.text-blue-300');
+            
+            // Only update if this message has a username element and it matches the old username
+            if (usernameElement && usernameElement.textContent === data.oldUsername) {
+                usernameElement.textContent = data.newUsername;
+            }
+        });
     });
 
     socket.on('user_typing', (data) => {

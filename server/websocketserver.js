@@ -1,3 +1,4 @@
+const logger = require('../utils/logger')
 const WebSocket = require('ws')
 
 const clients = []
@@ -11,6 +12,7 @@ const clients = []
  */
 const initializeWebsocketServer = (server) => {
   const websocketServer = new WebSocket.Server({ server })
+  logger.info('WebSocket server initialized')
   websocketServer.on('connection', onConnection)
 }
 
@@ -22,6 +24,7 @@ const initializeWebsocketServer = (server) => {
  * @returns {void}
  */
 const onConnection = (ws) => {
+  logger.info('New WebSocket client connected')
   ws.on('message', (message) => onMessage(ws, message))
 }
 
@@ -38,6 +41,7 @@ const onMessage = (ws, messageBuffer) => {
   // The message type is checked and the appropriate action is taken
   switch (message.type) {
     case 'user': {
+      logger.info(`User connected: ${message.user.name}`)
       clients.push({ ws, user: message.user })
       const usersMessage = {
         type: 'users',
@@ -50,13 +54,14 @@ const onMessage = (ws, messageBuffer) => {
       break
     }
     case 'message': {
+      logger.info(`New message received: ${message.text}`)
       clients.forEach((client) => {
         client.ws.send(messageString)
       })
       break
     }
     default: {
-      console.log('Unknown message type: ' + message.type)
+      logger.warn(`Unknown message type: ${message.type}`)
     }
   }
 }
@@ -70,6 +75,7 @@ const onMessage = (ws, messageBuffer) => {
  */
 const onDisconnect = (ws) => {
   const index = clients.findIndex((client) => client.ws === ws)
+  logger.info(`Client disconnected`)
   clients.splice(index, 1)
   const usersMessage = {
     type: 'users',

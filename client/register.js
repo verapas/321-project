@@ -1,8 +1,5 @@
-/**
- * Initializes the registration page functionality
- * @description Sets up event listeners and form validation for user registration
- */
 document.addEventListener("DOMContentLoaded", () => {
+    console.log("Registration page loaded");
     const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
     const confirmPasswordInput = document.getElementById("confirm-password");
@@ -15,12 +12,12 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const userData = JSON.parse(storedUser);
             if (userData.token) {
-                // Redirect to chat page if already logged in
+                console.log("User already logged in, redirecting to chat");
                 window.location.href = "/";
                 return;
             }
         } catch (e) {
-            // Invalid stored data, clear it
+            console.warn("Invalid user data in localStorage, clearing");
             localStorage.removeItem("user");
         }
     }
@@ -38,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     registerButton.addEventListener("click", async (e) => {
         e.preventDefault();
+        console.log("Registration attempt started");
 
         // Clear previous error
         errorText.innerText = "";
@@ -49,30 +47,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Validation
         if (!username) {
+            console.warn("Registration validation failed: Username is required");
             errorText.className = "text-red-500 text-center mt-2";
             errorText.innerText = "Username is required";
             return;
         }
 
         if (username.length < 3) {
+            console.warn("Registration validation failed: Username too short");
             errorText.className = "text-red-500 text-center mt-2";
             errorText.innerText = "Username must be at least 3 characters long";
             return;
         }
 
         if (!password) {
+            console.warn("Registration validation failed: Password is required");
             errorText.className = "text-red-500 text-center mt-2";
             errorText.innerText = "Password is required";
             return;
         }
 
         if (password.length < 6) {
+            console.warn("Registration validation failed: Password too short");
             errorText.className = "text-red-500 text-center mt-2";
             errorText.innerText = "Password must be at least 6 characters long";
             return;
         }
 
         if (password !== confirmPassword) {
+            console.warn("Registration validation failed: Passwords do not match");
             errorText.className = "text-red-500 text-center mt-2";
             errorText.innerText = "Passwords do not match";
             return;
@@ -83,6 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
         registerButton.innerText = "Creating account...";
 
         try {
+            console.log(`Attempting to register user: ${username}`);
             const response = await fetch("/api/register", {
                 method: "POST",
                 headers: {
@@ -93,6 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await response.json();
             if (response.ok) {
+                console.log("Registration successful");
                 errorText.className = "text-green-500 text-center mt-2";
                 errorText.innerText = "Registration successful! Redirecting to login...";
 
@@ -100,13 +105,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     window.location.href = "/login.html";
                 }, 2000);
             } else {
+                console.warn(`Registration failed: ${data.error}`);
                 errorText.className = "text-red-500 text-center mt-2";
                 errorText.innerText = data.error || "Registration failed";
             }
         } catch (err) {
+            console.error("Registration error:", err);
             errorText.className = "text-red-500 text-center mt-2";
             errorText.innerText = "Connection error. Please try again";
-            console.error("Registration error:", err);
         } finally {
             // Re-enable button
             registerButton.disabled = false;

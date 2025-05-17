@@ -1,4 +1,5 @@
 require('dotenv').config();
+const logger = require('../utils/logger');
 const { executeSQL } = require('./database');
 const { body, validationResult } = require("express-validator");
 const { initializeMariaDB, queryDB, insertDB } = require("./database");
@@ -27,25 +28,25 @@ const formatDateForDB = (date) => {
  */
 async function authenticateToken(req, res, next) {
   try {
-
     const authHeader = req.headers["authorization"];
     if (!authHeader) {
-      console.warn("Authorization header missing");
+      logger.warn("Authorization header missing");
       return res.status(401).json({ message: "Unauthorized: Token missing" });
     }
-    
+
     const token = authHeader.split(" ")[1];
     if (!token) {
-      console.warn("Token not found in authorization header");
+      logger.warn("Token not found in authorization header");
       return res.status(401).json({ message: "Unauthorized: Token missing" });
     }
-    
+
     req.user = await new Promise((resolve, reject) => {
       jwt.verify(token, secretKey, (err, decoded) => {
         if (err) {
-          console.error(`Token verification failed: ${err.message}`);
+          logger.error(`Token verification failed: ${err.message}`);
           reject(err);
         } else {
+          logger.debug(`Token verified for user: ${decoded.username}`);
           resolve(decoded);
         }
       });
@@ -53,7 +54,7 @@ async function authenticateToken(req, res, next) {
 
     next();
   } catch (err) {
-    console.error(`Authentication error: ${err.message}`);
+    logger.error(`Authentication error: ${err.message}`);
     return res.status(403).json({ message: "Forbidden: invalid Token" });
   }
 }
@@ -70,33 +71,33 @@ const activeUsers = new Map();
  * @returns {void} - Continues to next middleware or returns error
  */
 const authenticateSocketToken = (socket, next) => {
-
   try {
     const token = socket.handshake.auth.token;
     if (!token) {
-      console.error('Socket.io: No token provided');
+      logger.warn('Socket.io: No token provided');
       return next(new Error('Authentication required'));
     }
-    
+
     jwt.verify(token, secretKey, (err, decoded) => {
       if (err) {
-        console.error(`Socket.io: Token verification failed: ${err.message}`);
+        logger.error(`Socket.io: Token verification failed: ${err.message}`);
         return next(new Error('Invalid token'));
       }
 
       socket.user = decoded;
-      
+      logger.info(`Socket.io: User ${decoded.username} authenticated`);
+
       // Add user to active users map when they connect
       activeUsers.set(decoded.id.toString(), {
         id: decoded.id,
         username: decoded.username,
         socketId: socket.id
       });
-      
+
       next();
     });
   } catch (error) {
-    console.error('Socket.io authentication error:', error);
+    logger.error(`Socket.io authentication error: ${error.message}`);
     return next(new Error('Socket authentication error'));
   }
 };
@@ -115,7 +116,7 @@ const login = async (req, res) => {
     const users = await queryDB(db, query, [username]);
 
     if (users.length !== 1) {
-      console.warn(`Login failed for user ${username}: user not found`);
+      logger.warn(`Login failed for user ${username}: user not found`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -123,9 +124,11 @@ const login = async (req, res) => {
     // Compare password with bcrypt
     const passwordMatches = await bcrypt.compare(password, user.password);
     if (!passwordMatches) {
-      console.warn(`Login failed for user ${username}: invalid password`);
+      logger.warn(`Login failed for user ${username}: invalid password`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    logger.info(`User ${username} logged in successfully`);
 
     // Remove sensitive data
     delete user.password;
@@ -140,10 +143,11 @@ const login = async (req, res) => {
     const token = jwt.sign(tokenPayload, secretKey, { expiresIn: "1h" });
     res.json({ token, username: user.username, id: user.id });
   } catch (err) {
-    console.error(`Login error for user ${req.body.username}: ${err.message}`);
+    logger.error(`Login error for user ${req.body.username}: ${err.message}`);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 /**
  * Handles new user registration with password hashing
@@ -157,12 +161,12 @@ const register = async (req, res) => {
 
     // Manual validation check - should not be needed with express-validator but adding as a safeguard
     if (!username || username.length < 3) {
-      console.warn(`Registration validation failed: Username must be at least 3 characters long`);
+      logger.warn(`Registration validation failed: Username must be at least 3 characters long`);
       return res.status(400).json({ error: "Username must be at least 3 characters long" });
     }
 
     if (!password || password.length < 6) {
-      console.warn(`Registration validation failed: Password must be at least 6 characters long`);
+      logger.warn(`Registration validation failed: Password must be at least 6 characters long`);
       return res.status(400).json({ error: "Password must be at least 6 characters long" });
     }
 
@@ -171,7 +175,7 @@ const register = async (req, res) => {
     const existingUsers = await queryDB(db, checkQuery, [username]);
 
     if (existingUsers && existingUsers.length > 0) {
-      console.warn(`Registration failed: User ${username} already exists`);
+      logger.warn(`Registration failed: User ${username} already exists`);
       return res.status(400).json({ error: "User already exists" });
     }
 
@@ -182,14 +186,15 @@ const register = async (req, res) => {
     const insertQuery = "INSERT INTO users (username, password) VALUES (?, ?)";
     await insertDB(db, insertQuery, [username, hashedPassword]);
 
+    logger.info(`New user registered: ${username}`);
     res.json({ status: "registered" });
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT' || error.code === 'ER_DUP_ENTRY') {
-      console.warn(`Registration failed (constraint): User ${req.body.username} already exists`);
+      logger.warn(`Registration failed (constraint): User ${req.body.username} already exists`);
       return res.status(400).json({ error: "User already exists" });
     }
 
-    console.error(`Registration error for user ${req.body.username}: ${error.message}`);
+    logger.error(`Registration error for user ${req.body.username}: ${error.message}`);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
@@ -212,10 +217,11 @@ const getMessages = async (req, res) => {
     `;
 
     const messages = await queryDB(db, query);
+    logger.debug(`Retrieved ${messages.length} messages for user ${req.user.username}`);
 
     res.json(messages);
   } catch (err) {
-    console.error(`Error fetching messages for user ${req.user.username}: ${err.message}`);
+    logger.error(`Error fetching messages for user ${req.user.username}: ${err.message}`);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
@@ -228,10 +234,9 @@ const getMessages = async (req, res) => {
  */
 const sendMessage = async (req, res) => {
   try {
-
     const { content } = req.body;
     if (!content || content.trim() === "") {
-      console.warn("Message sending failed: Message content is required");
+      logger.warn("Message sending failed: Message content is required");
       return res.status(400).json({ error: "Message content is required" });
     }
 
@@ -241,7 +246,7 @@ const sendMessage = async (req, res) => {
     
     // Format for DB: YYYY-MM-DD HH:MM:SS
     const dbTimestamp = formatDateForDB(now);
-    
+
     // For client response we can use ISO format
     const isoTimestamp = now.toISOString();
 
@@ -252,7 +257,7 @@ const sendMessage = async (req, res) => {
     // Send message to all connected clients
     // Convert any BigInt values to regular numbers
     const insertId = typeof result.insertId === 'bigint' ? Number(result.insertId) : result.insertId;
-    
+
     const messageData = {
       id: insertId,
       sender_id: Number(userId),
@@ -261,12 +266,14 @@ const sendMessage = async (req, res) => {
       timestamp: isoTimestamp  // Use ISO format for client display
     };
 
+    logger.info(`New message from ${req.user.username}: ${content.substring(0, 30)}${content.length > 30 ? '...' : ''}`);
+
     // Broadcast to all clients via Socket.io
     io.emit('new_message', messageData);
 
     res.json({ status: "ok", message: messageData });
   } catch (err) {
-    console.error(`Error sending message for user ${req.user.username}: ${err.message}`);
+    logger.error(`Error sending message for user ${req.user.username}: ${err.message}`);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -281,9 +288,10 @@ const getActiveUsers = async (req, res) => {
   try {
     // Get active users from memory instead of database
     const currentActiveUsers = Array.from(activeUsers.values());
+    logger.debug(`Retrieved ${currentActiveUsers.length} active users`);
     res.json(currentActiveUsers);
   } catch (err) {
-    console.error(`Error fetching active users for user ${req.user.username}: ${err.message}`);
+    logger.error(`Error fetching active users for user ${req.user.username}: ${err.message}`);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
@@ -300,15 +308,18 @@ const setUserTyping = async (req, res) => {
     const userId = req.user.id;
     const username = req.user.username;
 
+    logger.debug(`User ${username} typing status: ${isTyping}`);
+
     // Broadcast to all clients that user is typing
     io.emit('user_typing', { userId, username, isTyping });
 
     res.json({ status: "ok" });
   } catch (err) {
-    console.error(`Error updating typing status for user ${req.user.username}: ${err.message}`);
+    logger.error(`Error updating typing status for user ${req.user.username}: ${err.message}`);
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 /**
  * Initializes API routes, database connection, and Socket.io server
@@ -319,9 +330,10 @@ const setUserTyping = async (req, res) => {
 const initializeAPI = async (app, server) => {
   // Initialize database
   try {
+    logger.info('Initializing API and database connection');
     db = await initializeMariaDB();
   } catch (error) {
-    console.error("Failed to initialize database:", error);
+    logger.error(`Failed to initialize database: ${error.message}`);
     throw error;
   }
 
@@ -333,6 +345,7 @@ const initializeAPI = async (app, server) => {
     },
     transports: ['websocket', 'polling']
   });
+  logger.info('Socket.io server initialized');
 
   // Socket.io authentication middleware
   io.use(authenticateSocketToken);
@@ -345,6 +358,8 @@ const initializeAPI = async (app, server) => {
 
   // Socket.io connection handling
   io.on('connection', (socket) => {
+    logger.info(`Socket connected: ${socket.user.username} (ID: ${socket.user.id})`);
+
     // Broadcast updated active users list
     broadcastActiveUsers();
 
@@ -361,23 +376,25 @@ const initializeAPI = async (app, server) => {
     // Handle disconnect
     socket.on('disconnect', () => {
       const userId = socket.user.id;
-      
+      logger.info(`Socket disconnected: ${socket.user.username} (ID: ${userId})`);
+
       // Remove user from active users map
       activeUsers.delete(userId.toString());
-      
+
       // Broadcast that user is no longer typing
       socket.broadcast.emit('user_typing', {
         userId: userId,
         username: socket.user.username,
         isTyping: false
       });
-      
+
       // Broadcast updated active users list after user disconnects
       broadcastActiveUsers();
     });
   });
 
   // API Routes
+  logger.info('Setting up API routes');
 
   // Get messages
   app.get("/api/messages", authenticateToken, async (req, res) => {
@@ -397,7 +414,7 @@ const initializeAPI = async (app, server) => {
       async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          console.warn("Message validation failed", { errors: errors.array() });
+          logger.warn("Message validation failed", { errors: errors.array() });
           return res.status(400).json({ errors: errors.array() });
         }
         await sendMessage(req, res);
@@ -434,8 +451,8 @@ const initializeAPI = async (app, server) => {
       async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          console.warn("Registration validation failed", { errors: errors.array() });
-          
+          logger.warn("Registration validation failed", { errors: errors.array() });
+
           // Return the first error message for simplicity
           const firstError = errors.array()[0];
           return res.status(400).json({ error: firstError.msg });
@@ -459,8 +476,8 @@ const initializeAPI = async (app, server) => {
       async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          console.warn("Login validation failed", { errors: errors.array() });
-          
+          logger.warn("Login validation failed", { errors: errors.array() });
+
           // Return the first error message for simplicity
           const firstError = errors.array()[0];
           return res.status(400).json({ error: firstError.msg });
@@ -484,7 +501,7 @@ const initializeAPI = async (app, server) => {
         try {
           const errors = validationResult(req);
           if (!errors.isEmpty()) {
-            console.warn("Username update validation failed", { errors: errors.array() });
+            logger.warn("Username update validation failed", { errors: errors.array() });
             return res.status(400).json({ errors: errors.array() });
           }
 
@@ -496,7 +513,7 @@ const initializeAPI = async (app, server) => {
           const existingUsers = await queryDB(db, checkQuery, [username, userId]);
 
           if (existingUsers.length > 0) {
-            console.warn(`Username update failed: Username ${username} already exists`);
+            logger.warn(`Username update failed: Username ${username} already exists`);
             return res.status(400).json({ error: "Username already exists" });
           }
 
@@ -512,13 +529,34 @@ const initializeAPI = async (app, server) => {
 
           const token = jwt.sign(tokenPayload, secretKey, { expiresIn: "1h" });
 
+          // Get old username from active users map if available
+          const oldUsername = activeUsers.get(userId.toString())?.username || '';
+
+          logger.info(`Username changed: ${oldUsername} -> ${username}`);
+
+          // Update username in active users map
+          if (activeUsers.has(userId.toString())) {
+            const userData = activeUsers.get(userId.toString());
+            userData.username = username;
+            activeUsers.set(userId.toString(), userData);
+          }
+
+          // Broadcast username change to all clients
+          io.emit('username_updated', {
+            userId: userId,
+            oldUsername: oldUsername,
+            newUsername: username
+          });
+
           res.json({ token, username, id: userId });
         } catch (err) {
-          console.error(`Username update error: ${err.message}`);
+          logger.error(`Username update error: ${err.message}`);
           res.status(500).json({ error: "Internal server error" });
         }
       }
   );
+
+  logger.info('API initialization complete');
 };
 
 module.exports = { initializeAPI }

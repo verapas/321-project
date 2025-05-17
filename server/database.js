@@ -1,4 +1,5 @@
 let pool = null
+const logger = require('../utils/logger')
 
 /**
  * Initializes the MariaDB connection pool.
@@ -16,8 +17,8 @@ let pool = null
  */
 const initializeMariaDB = async () => {
   const mariadb = require('mariadb')
-  
   try {
+    logger.info('Initializing MariaDB connection pool')
     pool = mariadb.createPool({
       database: process.env.DB_NAME || 'mychat',
       host: process.env.DB_HOST || 'localhost',
@@ -25,18 +26,18 @@ const initializeMariaDB = async () => {
       password: process.env.DB_PASSWORD || 'mychatpassword',
       connectionLimit: 5,
     });
-    
+
     // Test the connection
     const conn = await pool.getConnection();
     conn.release();
+    logger.info('MariaDB connection successful')
 
     return pool;
   } catch (error) {
-    console.error('Error initializing MariaDB:', error);
+    logger.error(`Error initializing MariaDB: ${error.message}`)
     throw error;
   }
 }
-
 /**
  * Allows the execution of SQL queries.
  * @example
@@ -51,14 +52,15 @@ const executeSQL = async (query, params) => {
   let conn
   try {
     if (!pool) {
+      logger.error('Database pool is not initialized')
       throw new Error('Database pool is not initialized');
     }
-    
+
     conn = await pool.getConnection();
     const res = await conn.query(query, params);
     return res;
   } catch (err) {
-    console.error(`SQL execution error: ${err.message}`);
+    logger.error(`SQL execution error: ${err.message}`)
     throw err;
   } finally {
     if (conn) conn.release();
@@ -71,7 +73,7 @@ const executeSQL = async (query, params) => {
  * Useful for the first time setup.
  */
 const initializeDBSchema = async () => {
-  
+
   // Create users table with username and password fields
   const userTableQuery = `CREATE TABLE IF NOT EXISTS users (
     id INT NOT NULL AUTO_INCREMENT,
@@ -80,7 +82,7 @@ const initializeDBSchema = async () => {
     PRIMARY KEY (id)
   );`
   await executeSQL(userTableQuery)
-  
+
   // Create messages table
   const messageTableQuery = `CREATE TABLE IF NOT EXISTS messages (
     id INT NOT NULL AUTO_INCREMENT,
@@ -91,7 +93,7 @@ const initializeDBSchema = async () => {
     FOREIGN KEY (sender_id) REFERENCES users(id)
   );`
   await executeSQL(messageTableQuery)
-  
+
   // Create active_users table
   const activeUsersTableQuery = `CREATE TABLE IF NOT EXISTS active_users (
     id INT NOT NULL AUTO_INCREMENT,
@@ -102,6 +104,8 @@ const initializeDBSchema = async () => {
     FOREIGN KEY (user_id) REFERENCES users(id)
   );`
   await executeSQL(activeUsersTableQuery)
+
+  logger.info('Database schema initialization complete')
 
 }
 

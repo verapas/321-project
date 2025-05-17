@@ -1,7 +1,7 @@
 services:
 
   app:
-    image: pescel/321_project:1.0.0
+    image: pescel/321_project:1.0.1
     depends_on:
       - mariadb
     restart: always
